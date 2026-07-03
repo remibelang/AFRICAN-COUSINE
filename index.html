@@ -409,15 +409,40 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         // ============================================
-        // SUPABASE CONFIG - INLINE (No external file)
+        // SUPABASE CONFIG - With Retry Loop
         // ============================================
         
         const SUPABASE_URL = 'https://wbbsxfoztegjokbnsemq.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndiYnN4Zm96dGVnam9rYm5zZW1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU2ODk0MzAsImV4cCI6MjA1MTI2NTQzMH0.utWMF5ctdmY5ENFan1Bkmg_4CKIz8Q1';
         
-        // Create client immediately after CDN loads
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        console.log('Supabase initialized inline');
+        let supabase = null;
+        let initAttempts = 0;
+        const maxAttempts = 50;
+        
+        function tryInitSupabase() {
+            initAttempts++;
+            console.log('Supabase init attempt', initAttempts);
+            
+            if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                console.log('Supabase client created successfully');
+                // Dispatch event to notify menu loader
+                window.dispatchEvent(new Event('supabaseReady'));
+                return true;
+            }
+            
+            if (initAttempts < maxAttempts) {
+                setTimeout(tryInitSupabase, 100);
+            } else {
+                console.error('Failed to initialize Supabase after', maxAttempts, 'attempts');
+                document.getElementById('menu-container').innerHTML = 
+                    '<div class="error-message">Failed to connect to database. Please refresh.</div>';
+            }
+            return false;
+        }
+        
+        // Start trying immediately
+        tryInitSupabase();
     </script>
     <script src="js/cart.js"></script>
     <script>
@@ -426,13 +451,27 @@
         // ============================================
 
         document.addEventListener('DOMContentLoaded', () => {
-            loadMenu();
-            updateCartCount();
+            // Wait for supabaseReady event or check if already ready
+            if (supabase && typeof supabase.from === 'function') {
+                loadMenu();
+                updateCartCount();
+            } else {
+                window.addEventListener('supabaseReady', () => {
+                    loadMenu();
+                    updateCartCount();
+                });
+            }
         });
 
         async function loadMenu() {
             const container = document.getElementById('menu-container');
             if (!container) return;
+
+            if (!supabase || typeof supabase.from !== 'function') {
+                console.error('Supabase not ready');
+                container.innerHTML = '<div class="error-message">Connection error. Please refresh.</div>';
+                return;
+            }
 
             container.innerHTML = '<div class="loading-spinner">Loading menu...</div>';
 
