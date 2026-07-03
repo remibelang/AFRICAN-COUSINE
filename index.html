@@ -409,24 +409,23 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         // ============================================
-        // SUPABASE CONFIG - With Retry Loop
+        // SUPABASE CONFIG - Uses window.supabaseClient to avoid redeclaration
         // ============================================
         
         const SUPABASE_URL = 'https://wbbsxfoztegjokbnsemq.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndiYnN4Zm96dGVnam9rYm5zZW1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU2ODk0MzAsImV4cCI6MjA1MTI2NTQzMH0.utWMF5ctdmY5ENFan1Bkmg_4CKIz8Q1';
         
-        let supabase = null;
+        // Use window.supabaseClient to avoid conflicts with other scripts
+        window.supabaseClient = null;
         let initAttempts = 0;
         const maxAttempts = 50;
         
         function tryInitSupabase() {
             initAttempts++;
-            console.log('Supabase init attempt', initAttempts);
             
             if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 console.log('Supabase client created successfully');
-                // Dispatch event to notify menu loader
                 window.dispatchEvent(new Event('supabaseReady'));
                 return true;
             }
@@ -435,13 +434,14 @@
                 setTimeout(tryInitSupabase, 100);
             } else {
                 console.error('Failed to initialize Supabase after', maxAttempts, 'attempts');
-                document.getElementById('menu-container').innerHTML = 
-                    '<div class="error-message">Failed to connect to database. Please refresh.</div>';
+                const container = document.getElementById('menu-container');
+                if (container) {
+                    container.innerHTML = '<div class="error-message">Failed to connect to database. Please refresh.</div>';
+                }
             }
             return false;
         }
         
-        // Start trying immediately
         tryInitSupabase();
     </script>
     <script src="js/cart.js"></script>
@@ -451,8 +451,7 @@
         // ============================================
 
         document.addEventListener('DOMContentLoaded', () => {
-            // Wait for supabaseReady event or check if already ready
-            if (supabase && typeof supabase.from === 'function') {
+            if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
                 loadMenu();
                 updateCartCount();
             } else {
@@ -467,7 +466,8 @@
             const container = document.getElementById('menu-container');
             if (!container) return;
 
-            if (!supabase || typeof supabase.from !== 'function') {
+            const client = window.supabaseClient;
+            if (!client || typeof client.from !== 'function') {
                 console.error('Supabase not ready');
                 container.innerHTML = '<div class="error-message">Connection error. Please refresh.</div>';
                 return;
@@ -476,7 +476,7 @@
             container.innerHTML = '<div class="loading-spinner">Loading menu...</div>';
 
             try {
-                const { data: items, error } = await supabase
+                const { data: items, error } = await client
                     .from('menu_items')
                     .select('*')
                     .eq('available', true)
@@ -496,7 +496,7 @@
                         if (item.image_path.startsWith('http')) {
                             imageUrl = item.image_path;
                         } else {
-                            const { data } = supabase.storage
+                            const { data } = client.storage
                                 .from('menu-images')
                                 .getPublicUrl(item.image_path);
                             imageUrl = data.publicUrl;
